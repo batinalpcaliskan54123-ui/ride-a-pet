@@ -1,275 +1,308 @@
--- Ride a Pet | Xeno/Synapse/Fluxus uyumlu
--- Game: Ride a Pet (Roblox)
--- Lua 5.1 (Roblox VM)
-local Players     = game:GetService("Players")
-local RunService  = game:GetService("RunService")
+-- ╔══════════════════════════════════════╗
+-- ║   Ride a Pet Hub v2 | by 6larping7  ║
+-- ║   Xeno / Fluxus / Synapse uyumlu    ║
+-- ╚══════════════════════════════════════╝
+local ok, err = pcall(function()
+-- SERVICES
+local Players      = game:GetService("Players")
+local RunService   = game:GetService("RunService")
+local UIS          = game:GetService("UserInputService")
+local RS           = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
-local lp          = Players.LocalPlayer
-local char        = lp.Character or lp.CharacterAdded:Wait()
-local hrp         = char:WaitForChild("HumanoidRootPart")
-local hum         = char:WaitForChild("Humanoid")
--- ════════════════════════════════════════
---  CONFIG
--- ════════════════════════════════════════
+local lp           = Players.LocalPlayer
+local mouse        = lp:GetMouse()
+-- CHARACTER SETUP
+local char, hrp, hum
+local function setupChar()
+    char = lp.Character or lp.CharacterAdded:Wait()
+    hrp  = char:WaitForChild("HumanoidRootPart", 10)
+    hum  = char:WaitForChild("Humanoid", 10)
+end
+setupChar()
+lp.CharacterAdded:Connect(setupChar)
+-- CONFIG
 local CFG = {
-    AutoFarm       = true,   -- otomatik para/xp topla
-    AutoRide       = true,   -- en iyi peti otomatik bin
-    AutoHatch      = false,  -- yumurtaları otomatik aç
-    WalkSpeed      = 60,     -- default 16
-    JumpPower      = 80,     -- default 50
-    InfiniteJump   = true,
-    NoClip         = false,
-    AutoSell       = false,  -- petleri otomatik sat
-    FarmRadius     = 200,    -- farm menzili (studs)
-    TeleportFarm   = true,   -- farm noktalarına tp
+    AutoFarm     = false,
+    AutoRide     = false,
+    AutoHatch    = false,
+    AutoSell     = false,
+    InfJump      = false,
+    NoClip       = false,
+    Speed        = 60,
+    JumpPower    = 80,
+    FarmRadius   = 300,
 }
--- ════════════════════════════════════════
---  UTILS
--- ════════════════════════════════════════
-local function notify(title, body, dur)
-    game:GetService("StarterGui"):SetCore("SendNotification", {
-        Title    = title,
-        Text     = body,
-        Duration = dur or 4,
-    })
+-- NOTIFY
+local function notify(t, b)
+    pcall(function()
+        game:GetService("StarterGui"):SetCore("SendNotification",{
+            Title=t, Text=b, Duration=4
+        })
+    end)
 end
-local function getChar()
-    char = lp.Character
-    hrp  = char and char:FindFirstChild("HumanoidRootPart")
-    hum  = char and char:FindFirstChild("Humanoid")
-end
-lp.CharacterAdded:Connect(getChar)
--- ════════════════════════════════════════
---  SPEED & JUMP
--- ════════════════════════════════════════
+-- ══════════════════════════════
+-- SPEED / JUMP LOOP
+-- ══════════════════════════════
 RunService.Heartbeat:Connect(function()
-    if not hum then return end
-    hum.WalkSpeed = CFG.WalkSpeed
-    hum.JumpPower = CFG.JumpPower
+    pcall(function()
+        if hum and hum.Parent then
+            hum.WalkSpeed = CFG.Speed
+            hum.JumpPower = CFG.JumpPower
+        end
+    end)
 end)
--- ════════════════════════════════════════
---  INFINITE JUMP
--- ════════════════════════════════════════
-if CFG.InfiniteJump then
-    game:GetService("UserInputService").JumpRequest:Connect(function()
-        if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
-    end)
-end
--- ════════════════════════════════════════
---  NO CLIP
--- ════════════════════════════════════════
-if CFG.NoClip then
-    RunService.Stepped:Connect(function()
-        if not char then return end
-        for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = false
-            end
+-- ══════════════════════════════
+-- INF JUMP
+-- ══════════════════════════════
+UIS.JumpRequest:Connect(function()
+    if CFG.InfJump and hum then
+        pcall(function() hum:ChangeState(Enum.HumanoidStateType.Jumping) end)
+    end
+end)
+-- ══════════════════════════════
+-- NO CLIP
+-- ══════════════════════════════
+RunService.Stepped:Connect(function()
+    if not CFG.NoClip or not char then return end
+    pcall(function()
+        for _, p in ipairs(char:GetDescendants()) do
+            if p:IsA("BasePart") then p.CanCollide = false end
         end
     end)
-end
--- ════════════════════════════════════════
---  AUTO RIDE (en yakın/en iyi pet'e bin)
--- ════════════════════════════════════════
-local function findBestPet()
-    -- Pet'ler genelde workspace'te "Pets" klasöründe durur
-    local petsFolder = workspace:FindFirstChild("Pets")
-    if not petsFolder then return nil end
-    local best, bestDist = nil, math.huge
-    for _, pet in ipairs(petsFolder:GetChildren()) do
-        local petRoot = pet:FindFirstChild("HumanoidRootPart") or pet:FindFirstChild("Root")
-        if petRoot and hrp then
-            local dist = (petRoot.Position - hrp.Position).Magnitude
-            if dist < bestDist then
-                best     = pet
-                bestDist = dist
-            end
-        end
+end)
+-- ══════════════════════════════
+-- REMOTE BULUCU (otomatik tarar)
+-- ══════════════════════════════
+local function findRemote(...)
+    local names = {...}
+    -- ReplicatedStorage içini tara
+    for _, name in ipairs(names) do
+        local r = RS:FindFirstChild(name, true)
+        if r then return r end
     end
-    return best
-end
-local function autoRide()
-    if not CFG.AutoRide then return end
-    local pet = findBestPet()
-    if not pet then
-        notify("Ride a Pet", "Pet bulunamadı!", 3)
-        return
+    -- Workspace içini tara
+    for _, name in ipairs(names) do
+        local r = workspace:FindFirstChild(name, true)
+        if r then return r end
     end
-    -- Remote event adını oyuna göre ayarla
-    local remote = game:GetService("ReplicatedStorage"):FindFirstChild("RideEvent")
-        or game:GetService("ReplicatedStorage"):FindFirstChild("Ride")
-        or game:GetService("ReplicatedStorage"):FindFirstChildWhichIsA("RemoteEvent")
-    if remote then
-        remote:FireServer(pet)
-        notify("Ride a Pet", "Pet'e binildi: " .. pet.Name, 3)
-    else
-        -- Fallback: karakteri pet'e tp et
-        if hrp then
-            local petRoot = pet:FindFirstChild("HumanoidRootPart") or pet:FindFirstChild("Root")
-            if petRoot then hrp.CFrame = petRoot.CFrame + Vector3.new(0, 3, 0) end
-        end
-        notify("Ride a Pet", "Remote bulunamadı, tp ile bindi.", 3)
-    end
+    return nil
 end
--- ════════════════════════════════════════
---  AUTO FARM (coin / xp topla)
--- ════════════════════════════════════════
-local farmedCount = 0
-local function autoFarm()
+-- ══════════════════════════════
+-- AUTO FARM
+-- ══════════════════════════════
+local farmCount = 0
+local function doFarm()
     if not CFG.AutoFarm or not hrp then return end
-    -- Coin/collectible objeleri workspace'ten tara
-    local targets = {}
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("BasePart") or obj:IsA("Model") then
-            local name = obj.Name:lower()
-            if name:find("coin") or name:find("gem") or name:find("xp")
-               or name:find("reward") or name:find("collect") then
-                local root = obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")) or obj
-                if root then
-                    local dist = (root.Position - hrp.Position).Magnitude
-                    if dist < CFG.FarmRadius then
-                        table.insert(targets, {obj = root, dist = dist})
-                    end
+    pcall(function()
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if not CFG.AutoFarm then break end
+            local n = obj.Name:lower()
+            if obj:IsA("BasePart") and (
+                n:find("coin") or n:find("gem") or n:find("token")
+                or n:find("reward") or n:find("collec") or n:find("xp")
+                or n:find("money") or n:find("cash")
+            ) then
+                local dist = (obj.Position - hrp.Position).Magnitude
+                if dist < CFG.FarmRadius then
+                    hrp.CFrame = CFrame.new(obj.Position + Vector3.new(0,3,0))
+                    farmCount = farmCount + 1
+                    task.wait(0.08)
                 end
             end
         end
-    end
-    -- En yakına git / tp yap
-    table.sort(targets, function(a, b) return a.dist < b.dist end)
-    for _, t in ipairs(targets) do
-        if CFG.TeleportFarm and hrp then
-            hrp.CFrame = CFrame.new(t.obj.Position + Vector3.new(0, 3, 0))
-            farmedCount = farmedCount + 1
-            task.wait(0.1)
-        end
-    end
+    end)
 end
--- ════════════════════════════════════════
---  AUTO HATCH
--- ════════════════════════════════════════
-local function autoHatch()
-    if not CFG.AutoHatch then return end
-    local eggs = workspace:FindFirstChild("Eggs") or workspace:FindFirstChild("EggArea")
-    if not eggs then return end
-    for _, egg in ipairs(eggs:GetChildren()) do
-        local eggRoot = egg.PrimaryPart or egg:FindFirstChildWhichIsA("BasePart")
-        if eggRoot and hrp then
-            hrp.CFrame = CFrame.new(eggRoot.Position + Vector3.new(0, 3, 0))
-            task.wait(0.3)
-            -- Hatch remote'unu ateşle
-            local hatchRemote = game:GetService("ReplicatedStorage"):FindFirstChild("Hatch")
-                or game:GetService("ReplicatedStorage"):FindFirstChild("HatchEgg")
-            if hatchRemote then
-                hatchRemote:FireServer(egg)
-                task.wait(0.5)
+-- ══════════════════════════════
+-- AUTO RIDE
+-- ══════════════════════════════
+local function doRide()
+    if not CFG.AutoRide or not hrp then return end
+    pcall(function()
+        -- Pet klasörlerini dene
+        local pFolder = workspace:FindFirstChild("Pets")
+            or workspace:FindFirstChild("PetModels")
+            or workspace:FindFirstChild("SpawnedPets")
+        if not pFolder then
+            -- Tüm workspace'i tara
+            for _, obj in ipairs(workspace:GetChildren()) do
+                if obj.Name:lower():find("pet") then pFolder = obj break end
             end
         end
-    end
+        if not pFolder then notify("Ride Hub","Pet klasörü bulunamadı!") return end
+        local best, bestDist, bestRoot = nil, math.huge, nil
+        for _, pet in ipairs(pFolder:GetChildren()) do
+            local root = pet:FindFirstChild("HumanoidRootPart")
+                or pet:FindFirstChild("Root")
+                or pet.PrimaryPart
+                or pet:FindFirstChildWhichIsA("BasePart")
+            if root then
+                local d = (root.Position - hrp.Position).Magnitude
+                if d < bestDist then
+                    best = pet bestDist = d bestRoot = root
+                end
+            end
+        end
+        if not best then notify("Ride Hub","Yakında pet yok!") return end
+        -- Remote dene
+        local rideRemote = findRemote(
+            "RideEvent","Ride","RidePet","MountPet",
+            "PetRide","OnRide","RequestRide","RideRequest"
+        )
+        if rideRemote then
+            rideRemote:FireServer(best)
+            notify("Ride Hub","Pete binildi! 🐾")
+        else
+            -- Remote yoksa tp yap
+            hrp.CFrame = CFrame.new(bestRoot.Position + Vector3.new(0,4,0))
+            notify("Ride Hub","TP ile pete bindi (remote yok)")
+        end
+    end)
 end
--- ════════════════════════════════════════
---  AUTO SELL
--- ════════════════════════════════════════
-local function autoSell()
+-- ══════════════════════════════
+-- AUTO HATCH
+-- ══════════════════════════════
+local function doHatch()
+    if not CFG.AutoHatch or not hrp then return end
+    pcall(function()
+        local hatchRemote = findRemote(
+            "Hatch","HatchEgg","OpenEgg","BuyEgg",
+            "EggHatch","HatchRequest","PurchaseEgg"
+        )
+        local eggZones = {}
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            local n = obj.Name:lower()
+            if obj:IsA("BasePart") and (n:find("egg") or n:find("hatch")) then
+                table.insert(eggZones, obj)
+            end
+        end
+        for _, egg in ipairs(eggZones) do
+            hrp.CFrame = CFrame.new(egg.Position + Vector3.new(0,4,0))
+            task.wait(0.5)
+            if hatchRemote then
+                pcall(function() hatchRemote:FireServer(egg.Parent or egg) end)
+                task.wait(0.3)
+            end
+        end
+    end)
+end
+-- ══════════════════════════════
+-- AUTO SELL
+-- ══════════════════════════════
+local function doSell()
     if not CFG.AutoSell then return end
-    local sellRemote = game:GetService("ReplicatedStorage"):FindFirstChild("SellPets")
-        or game:GetService("ReplicatedStorage"):FindFirstChild("Sell")
-    if sellRemote then
-        sellRemote:FireServer()
-        notify("Ride a Pet", "Petler satıldı!", 2)
-    end
+    pcall(function()
+        local sellRemote = findRemote(
+            "SellPets","Sell","SellAll","AutoSell",
+            "PetSell","SellRequest","SellPet"
+        )
+        if sellRemote then
+            sellRemote:FireServer()
+            notify("Ride Hub","Petler satıldı! 💰")
+        else
+            notify("Ride Hub","Sell remote'u bulunamadı")
+        end
+    end)
 end
--- ════════════════════════════════════════
---  MAIN LOOP
--- ════════════════════════════════════════
-notify("Ride a Pet Hile", "Script yüklendi! 6larping7 🥔", 5)
-autoRide()
+-- ══════════════════════════════
+-- MAIN LOOPS
+-- ══════════════════════════════
 task.spawn(function()
-    while task.wait(2) do
-        getChar()
-        autoFarm()
-    end
+    while task.wait(1.5) do pcall(doFarm) end
 end)
 task.spawn(function()
-    while task.wait(30) do
-        autoHatch()
-        autoSell()
-    end
+    while task.wait(5) do pcall(doRide) end
 end)
--- ════════════════════════════════════════
---  SIMPLE GUI (toggle panel)
--- ════════════════════════════════════════
-local ScreenGui   = Instance.new("ScreenGui")
-local Frame       = Instance.new("Frame")
-local UICorner    = Instance.new("UICorner")
-local Title       = Instance.new("TextLabel")
-local BtnFarm     = Instance.new("TextButton")
-local BtnRide     = Instance.new("TextButton")
-local BtnHatch    = Instance.new("TextButton")
-local BtnSell     = Instance.new("TextButton")
-local StatsLabel  = Instance.new("TextLabel")
-ScreenGui.Name            = "RideAPetHub"
-ScreenGui.ResetOnSpawn    = false
-ScreenGui.ZIndexBehavior  = Enum.ZIndexBehavior.Sibling
--- executor koruma (syngui vs)
-pcall(function() ScreenGui.Parent = game:GetService("CoreGui") end)
-if not ScreenGui.Parent then ScreenGui.Parent = lp:WaitForChild("PlayerGui") end
-Frame.Size                  = UDim2.new(0, 220, 0, 240)
-Frame.Position              = UDim2.new(0, 20, 0.3, 0)
-Frame.BackgroundColor3      = Color3.fromRGB(20, 20, 30)
-Frame.BorderSizePixel       = 0
-Frame.Active                = true
-Frame.Draggable             = true
-Frame.Parent                = ScreenGui
-UICorner.CornerRadius       = UDim.new(0, 10)
-UICorner.Parent             = Frame
-Title.Text                  = "🥔 Ride a Pet Hub"
-Title.Size                  = UDim2.new(1, 0, 0, 35)
-Title.Position              = UDim2.new(0, 0, 0, 0)
-Title.BackgroundColor3      = Color3.fromRGB(90, 40, 200)
-Title.TextColor3            = Color3.new(1,1,1)
-Title.Font                  = Enum.Font.GothamBold
-Title.TextSize              = 14
-Title.Parent                = Frame
-local tc = Instance.new("UICorner"); tc.CornerRadius = UDim.new(0,10); tc.Parent = Title
-local btnY = 40
-local function makeBtn(label, y, toggleKey)
-    local btn               = Instance.new("TextButton")
-    btn.Size                = UDim2.new(1, -20, 0, 30)
-    btn.Position            = UDim2.new(0, 10, 0, y)
-    btn.BackgroundColor3    = Color3.fromRGB(50, 50, 80)
-    btn.TextColor3          = Color3.new(1,1,1)
-    btn.Font                = Enum.Font.Gotham
-    btn.TextSize            = 13
-    btn.BorderSizePixel     = 0
-    btn.Parent              = Frame
-    local bc = Instance.new("UICorner"); bc.CornerRadius = UDim.new(0,6); bc.Parent = btn
+task.spawn(function()
+    while task.wait(25) do pcall(doHatch) pcall(doSell) end
+end)
+-- ══════════════════════════════
+-- GUI
+-- ══════════════════════════════
+local gui = Instance.new("ScreenGui")
+gui.Name = "RideHubV2"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+pcall(function() gui.Parent = game:GetService("CoreGui") end)
+if not gui.Parent then gui.Parent = lp:WaitForChild("PlayerGui") end
+-- Ana frame
+local main = Instance.new("Frame")
+main.Size = UDim2.new(0, 230, 0, 320)
+main.Position = UDim2.new(0, 15, 0.25, 0)
+main.BackgroundColor3 = Color3.fromRGB(18, 18, 28)
+main.BorderSizePixel = 0
+main.Active = true
+main.Draggable = true
+main.Parent = gui
+Instance.new("UICorner", main).CornerRadius = UDim.new(0,12)
+-- Başlık
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1,0,0,38)
+title.BackgroundColor3 = Color3.fromRGB(100,50,220)
+title.TextColor3 = Color3.new(1,1,1)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 14
+title.Text = "🥔  Ride a Pet Hub  v2"
+title.Parent = main
+Instance.new("UICorner", title).CornerRadius = UDim.new(0,12)
+-- Toggle buton factory
+local function makeToggle(label, cfgKey, yPos)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1,-20,0,32)
+    btn.Position = UDim2.new(0,10,0,yPos)
+    btn.Font = Enum.Font.GothamSemibold
+    btn.TextSize = 13
+    btn.BorderSizePixel = 0
+    btn.Parent = main
+    Instance.new("UICorner",btn).CornerRadius = UDim.new(0,8)
     local function refresh()
-        local state = CFG[toggleKey]
-        btn.Text            = label .. ": " .. (state and "✅ ON" or "❌ OFF")
-        btn.BackgroundColor3 = state
-            and Color3.fromRGB(40, 120, 60)
-            or  Color3.fromRGB(120, 40, 40)
+        local on = CFG[cfgKey]
+        btn.Text = (on and "✅ " or "❌ ") .. label
+        btn.BackgroundColor3 = on
+            and Color3.fromRGB(35,110,55)
+            or  Color3.fromRGB(110,35,35)
+        btn.TextColor3 = Color3.new(1,1,1)
     end
     refresh()
     btn.MouseButton1Click:Connect(function()
-        CFG[toggleKey] = not CFG[toggleKey]
+        CFG[cfgKey] = not CFG[cfgKey]
         refresh()
-        notify("Ride a Pet Hub", label .. " -> " .. (CFG[toggleKey] and "AÇıK" or "KAPALI"), 2)
     end)
-    return btn
 end
-makeBtn("Auto Farm",  45,  "AutoFarm")
-makeBtn("Auto Ride", 82,  "AutoRide")
-makeBtn("Auto Hatch", 119, "AutoHatch")
-makeBtn("Auto Sell",  156, "AutoSell")
-StatsLabel.Size             = UDim2.new(1, -10, 0, 25)
-StatsLabel.Position         = UDim2.new(0, 5, 0, 200)
-StatsLabel.BackgroundTransparency = 1
-StatsLabel.TextColor3       = Color3.fromRGB(180, 180, 255)
-StatsLabel.Font             = Enum.Font.Gotham
-StatsLabel.TextSize         = 11
-StatsLabel.Text             = "Farmed: 0"
-StatsLabel.Parent           = Frame
+makeToggle("Auto Farm",   "AutoFarm",  48)
+makeToggle("Auto Ride",   "AutoRide",  88)
+makeToggle("Auto Hatch",  "AutoHatch", 128)
+makeToggle("Auto Sell",   "AutoSell",  168)
+makeToggle("Infinite Jump","InfJump",  208)
+makeToggle("No Clip",     "NoClip",   248)
+-- Stats
+local stats = Instance.new("TextLabel")
+stats.Size = UDim2.new(1,-10,0,22)
+stats.Position = UDim2.new(0,5,0,288)
+stats.BackgroundTransparency = 1
+stats.TextColor3 = Color3.fromRGB(160,160,255)
+stats.Font = Enum.Font.Gotham
+stats.TextSize = 11
+stats.Parent = main
 RunService.Heartbeat:Connect(function()
-    StatsLabel.Text = string.format("Farmed: %d | Speed: %d", farmedCount, CFG.WalkSpeed)
+    pcall(function()
+        stats.Text = string.format("Farmed: %d | Speed: %d | Jump: %d",
+            farmCount, CFG.Speed, CFG.JumpPower)
+    end)
 end)
+notify("Ride a Pet Hub v2","Script yüklendi! 🥔 absolute 6larping7", 5)
+end) -- pcall sonu
+if not ok then
+    -- Hata varsa ekrana yaz
+    local pg = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+    local sg = Instance.new("ScreenGui"); sg.Parent = pg
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(0,400,0,60)
+    lbl.Position = UDim2.new(0.5,-200,0,10)
+    lbl.BackgroundColor3 = Color3.fromRGB(180,30,30)
+    lbl.TextColor3 = Color3.new(1,1,1)
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextSize = 11
+    lbl.TextWrapped = true
+    lbl.Text = "HATA: " .. tostring(err)
+    lbl.Parent = sg
+end
